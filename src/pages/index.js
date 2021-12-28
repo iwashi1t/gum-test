@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react"
+import React, { useEffect, useRef, useState, useCallback } from "react"
 
 import './styles.scss'
 import testImage from '../images/test.png'
@@ -12,24 +12,16 @@ const IndexPage = () => {
   const video = useRef()
   const canvas = useRef()
 
-  const [downloadURL, setDownloadURL] = useState()
+  const [shouldFacingUser, setShouldFacingUser] = useState(false)
 
-  const takePhoto = () => {
+  const takePhoto = useCallback(() => {
     video.current.pause()
-
-    const context = canvas.current.getContext('2d')
 
     const videoStyle = window.getComputedStyle(video.current)
     const videoViewWidth = parseFloat(videoStyle.width)
     const videoViewHeight = parseFloat(videoStyle.height)
-    console.log(`*** videoView width=${videoViewWidth} height=${videoViewHeight}`)
-    // const canvasStyle = window.getComputedStyle(canvas.current)
-    // console.log(`*** canvas width=${canvasStyle.width} height=${canvasStyle.height}`)
-    // const frameStyle = window.getComputedStyle(frame.current)
-    // console.log(`*** frame width=${frameStyle.width} height=${frameStyle.height}`)
 
     const { videoWidth, videoHeight } = video.current
-    console.log(`*** video width=${videoWidth} height=${videoHeight}`)
 
     const videoAspect = (videoHeight / videoWidth)
     const videoViewAspect = (videoViewHeight / videoViewWidth)
@@ -37,42 +29,59 @@ const IndexPage = () => {
     const [frameViewWidth, frameViewHeight] = (videoViewAspect > frameAspect)
       ? [videoViewWidth, videoViewWidth * frameAspect]
       : [videoViewHeight / frameAspect, videoViewHeight]
-    console.log(`*** frameView width=${frameViewWidth} height=${frameViewHeight}`)
 
     const videoRatio = (videoAspect > videoViewAspect)
       ? (videoWidth / videoViewWidth)
       : (videoHeight / videoViewHeight)
-    console.log(`*** videoRatio=${videoRatio}`)
 
     const w = frameViewWidth * videoRatio
     const h = frameViewHeight * videoRatio
     const x = (videoWidth - w) / 2
     const y = (videoHeight - h) / 2
 
-    console.log(`*** drawImage x=${x} y=${y} w=${w} h=${h}`)
+    const context = canvas.current.getContext('2d')
+    if (shouldFacingUser) {
+      context.translate(FRAME_WIDTH, 0)
+      context.scale(-1, 1)
+    }
     context.drawImage(video.current, x, y, w, h, 0, 0, FRAME_WIDTH, FRAME_HEIGHT)
 
     canvas.current.toBlob(blob => {
-      console.log(`*** blob`, blob)
-      const url = URL.createObjectURL(blob)
-      setDownloadURL(url)
+      console.log(`takePhoto blob`, blob)
+      video.current.play()
     })
-  }
+  }, [shouldFacingUser])
+
+  const switchFacing = useCallback(() => {
+    video.current.srcObject?.getTracks()?.forEach(track => track.stop())
+    setShouldFacingUser(!shouldFacingUser)
+  }, [shouldFacingUser])
 
   useEffect(() => {
+    const touchmove = e => e.preventDefault()
+    const scrollEvents = ['mousewheel', 'touchmove']
+    scrollEvents.forEach(e => document.addEventListener(e, touchmove, { passive: false }))
+    return () => {
+      scrollEvents.forEach(e => document.removeEventListener(e, touchmove))
+    }
+  }, [])
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices()
+      .then(devices => console.log(`*** devices`, devices))
     navigator.mediaDevices.getUserMedia({
-      video: true,
+      video: {
+        facingMode: shouldFacingUser ? 'user' : 'environment'
+      },
       audio: false
     })
       .then(stream => {
         video.current.srcObject = stream
-
-        setTimeout(takePhoto, 3000)
       })
       .catch(err => {
         console.error(err)
       })
-  }, [])
+  }, [shouldFacingUser])
 
   return (
     <div>
@@ -85,12 +94,12 @@ const IndexPage = () => {
           width: '100%',
           height: '100%',
           display: 'block',
-          objectFit: 'cover'
+          objectFit: 'cover',
+          transform: shouldFacingUser && 'scaleX(-1)'
         }}
         autoPlay
         playsInline
         muted
-        poster={testImage}
         // width={IMAGE_WIDTH}
         // height={IMAGE_HEIGHT}
         // onLoadedMetadata={() => {
@@ -135,19 +144,31 @@ const IndexPage = () => {
         justifyContent: 'space-between'
       }}>
         <div style={{
-          height: 100
-        }}></div>
-        <div style={{
-          height: 100,
+          height: 80,
           display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center'
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          padding: 20
         }}>
-          {downloadURL &&
-            <a href={downloadURL} download >
-              DOWNLOAD
-            </a>
-          }
+          <button onClick={switchFacing}>
+            SWITCH FACING
+          </button>
+        </div>
+        <div style={{
+          height: 120,
+          display: 'flex',
+          alignItems: 'center',
+          padding: 20
+        }}>
+          <div style={{ flex: 1 }}>
+          </div>
+          <div>
+            <button onClick={takePhoto}>
+              SHOOT
+            </button>
+          </div>
+          <div style={{ flex: 1 }}>
+          </div>
         </div>
       </div>
     </div>
